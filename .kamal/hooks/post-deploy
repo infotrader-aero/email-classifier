@@ -1,0 +1,25 @@
+#!/bin/bash
+# Post-deploy hook: Verify deployment
+# Checks that the classifier is healthy and responding
+
+set -e
+
+echo "Verifying deployment..."
+
+# Wait for container to be ready
+sleep 5
+
+for host in $KAMAL_HOSTS; do
+  echo "  -> Checking $host"
+
+  # Check health endpoint
+  response=$(curl -s -o /dev/null -w "%{http_code}" "https://$host/health" || echo "000")
+
+  if [ "$response" = "200" ]; then
+    echo "     Health check passed"
+  else
+    echo "     WARNING: Health check returned $response"
+  fi
+done
+
+echo "Deployment verification complete"

@@ -1,0 +1,28 @@
+#!/bin/bash
+# Pre-deploy hook: Sync model file to server
+# This ensures the classifier model is present before container starts
+
+set -e
+
+MODEL_FILE="models/email_classifier.pkl"
+REMOTE_DIR="/opt/email-classifier/models"
+
+echo "Syncing model file to servers..."
+
+for host in $KAMAL_HOSTS; do
+  echo "  -> $host"
+
+  # Create directory if it doesn't exist
+  ssh root@$host "mkdir -p $REMOTE_DIR"
+
+  # Sync model file
+  if [ -f "$MODEL_FILE" ]; then
+    scp "$MODEL_FILE" "root@$host:$REMOTE_DIR/"
+    echo "     Model synced successfully"
+  else
+    echo "     WARNING: Model file not found at $MODEL_FILE"
+    echo "     Run 'python train.py' first to generate the model"
+  fi
+done
+
+echo "Model sync complete"

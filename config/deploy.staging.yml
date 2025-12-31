@@ -1,0 +1,48 @@
+# Kamal 2 Staging Deployment Configuration
+# Deploy with: kamal deploy -d staging
+
+service: email-classifier
+
+image: infotrader/email-classifier
+
+servers:
+  web:
+    hosts:
+      - classifier-staging.infotrader.aero
+    options:
+      memory: 512m
+
+proxy:
+  ssl: true
+  host: classifier-staging.infotrader.aero
+  healthcheck:
+    path: /health
+    interval: 10
+    timeout: 5
+
+registry:
+  server: ghcr.io
+  username: infotrader
+  password:
+    - KAMAL_REGISTRY_PASSWORD
+
+builder:
+  arch: amd64
+
+ssh:
+  user: root
+
+env:
+  clear:
+    MODEL_PATH: /app/models/email_classifier.pkl
+  secret:
+    - API_KEY
+
+volumes:
+  - /opt/email-classifier/models:/app/models:ro
+
+logging:
+  driver: json-file
+  options:
+    max-size: 100m
+    max-file: 3

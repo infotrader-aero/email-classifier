@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  email-classifier:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - API_KEY=${API_KEY}
+      - MODEL_PATH=/app/models/email_classifier.pkl
+    volumes:
+      - ./models:/app/models:ro
+    restart: unless-stopped
