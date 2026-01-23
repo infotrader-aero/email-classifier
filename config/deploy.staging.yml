@@ -8,7 +8,7 @@ image: infotrader/email-classifier
 servers:
   web:
     hosts:
-      - classifier-staging.infotrader.aero
+      - 5.78.113.32
     options:
       memory: 512m
 

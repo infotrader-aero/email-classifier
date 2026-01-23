@@ -29,3 +29,6 @@ examples/
 .kamal/secrets
 .kamal/secrets-*
 !.kamal/secrets-*.example
+.kamal/*
+
+.DS_Store
