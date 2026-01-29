@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Pre-deploy hook: Sync model file to server
 # This ensures the classifier model is present before container starts
 
