@@ -7,17 +7,19 @@ set -e
 MODEL_FILE="models/email_classifier.pkl"
 REMOTE_DIR="/opt/email-classifier/models"
 
+SSH_USER="ubuntu"
+
 echo "Syncing model file to servers..."
 
 for host in $KAMAL_HOSTS; do
   echo "  -> $host"
 
   # Create directory if it doesn't exist
-  ssh root@$host "mkdir -p $REMOTE_DIR"
+  ssh $SSH_USER@$host "sudo mkdir -p $REMOTE_DIR && sudo chown $SSH_USER:$SSH_USER $REMOTE_DIR"
 
   # Sync model file
   if [ -f "$MODEL_FILE" ]; then
-    scp "$MODEL_FILE" "root@$host:$REMOTE_DIR/"
+    scp "$MODEL_FILE" "$SSH_USER@$host:$REMOTE_DIR/"
     echo "     Model synced successfully"
   else
     echo "     WARNING: Model file not found at $MODEL_FILE"
