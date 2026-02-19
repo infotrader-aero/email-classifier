@@ -21,6 +21,26 @@ OUTBOUND_QUOTE_PATTERNS = [
     'your quote is ready', 'this is a quotation only', 'this quote is valid for',
 ]
 
+# Patterns indicating a vendor is responding to our RFQ
+VENDOR_RESPONSE_PATTERNS = [
+    'your rfq',
+    'quote for rfq',
+]
+
+# Regex to find dollar amounts (e.g., $100, $1,000, $3,985.00)
+PRICE_PATTERN = re.compile(r'\$[\d,]+(?:\.\d{2})?')
+
+
+def _contains_price_above_threshold(text, threshold=100):
+    """Check if text contains a dollar amount above the threshold."""
+    matches = PRICE_PATTERN.findall(text)
+    for match in matches:
+        # Remove $ and commas, then convert to float
+        amount = float(match.replace('$', '').replace(',', ''))
+        if amount > threshold:
+            return True
+    return False
+
 
 class EmailClassifier:
     """
@@ -67,11 +87,19 @@ class EmailClassifier:
         if re.match(r'^(re|fw|fwd):\s', text_lower):
             return VENDOR_RESPONSE
 
-        # 2. Check for listing service patterns
+        # 2. Check for vendor response patterns (e.g., "your rfq" means they're responding to our RFQ)
+        if any(pattern in text_lower for pattern in VENDOR_RESPONSE_PATTERNS):
+            return VENDOR_RESPONSE
+
+        # 3. Check for price > $100 - RFQs request prices, they don't include them
+        if _contains_price_above_threshold(text):
+            return VENDOR_RESPONSE
+
+        # 4. Check for listing service patterns
         if any(pattern in text_lower for pattern in LISTING_SERVICE_PATTERNS):
             return LISTING_SERVICE
 
-        # 3. Check for outbound quote patterns (but not if it's a reply)
+        # 5. Check for outbound quote patterns (but not if it's a reply)
         if any(pattern in text_lower for pattern in OUTBOUND_QUOTE_PATTERNS):
             return AUTOMATED
 

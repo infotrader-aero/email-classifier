@@ -123,6 +123,7 @@ CATEGORY_KEYWORDS = {
         'we can only offer', 'let me know if that works',
         'quote attached', 'pricing attached',
         'we have available', 'unit available',
+        'your rfq', 'quote for rfq',
     ],
     VENDOR_PROMOTION: [
         'hot parts', 'hot list', 'sale is live', 'parts sale',
