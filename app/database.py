@@ -69,3 +69,26 @@ def fetch_email_count(conn):
         cursor.execute(query)
         result = cursor.fetchone()
         return result['count']
+
+
+def fetch_corrected_labels(conn):
+    """
+    Fetch corrected category labels from email_training_samples.
+
+    Returns a dictionary mapping inbound_email_id to corrected_category.
+    Only includes records where corrected_category is set.
+    """
+    query = """
+        SELECT
+            inbound_email_id,
+            corrected_category
+        FROM email_training_samples
+        WHERE corrected_category IS NOT NULL
+          AND corrected_category != ''
+    """
+
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        results = cursor.fetchall()
+
+    return {row['inbound_email_id']: row['corrected_category'] for row in results}

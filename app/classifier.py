@@ -8,7 +8,7 @@ from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import classification_report, confusion_matrix
 import numpy as np
 
-from .categories import CATEGORIES, REQUEST_FOR_QUOTE, LISTING_SERVICE, AUTOMATED, VENDOR_RESPONSE
+from .categories import CATEGORIES, REQUEST_FOR_QUOTE, LISTING_SERVICE, AUTOMATED, VENDOR_RESPONSE, VENDOR_PROMOTION
 
 
 # High-confidence patterns that override ML predictions
@@ -25,6 +25,16 @@ OUTBOUND_QUOTE_PATTERNS = [
 VENDOR_RESPONSE_PATTERNS = [
     'your rfq',
     'quote for rfq',
+]
+
+# Patterns indicating a vendor promotion (offering parts for sale)
+VENDOR_PROMOTION_PATTERNS = [
+    'surplus for sale',
+    'available for sale',
+    'we have a list of surplus',
+    'parts for sale',
+    'inventory for sale',
+    'stock for sale',
 ]
 
 # Regex to find dollar amounts (e.g., $100, $1,000, $3,985.00)
@@ -95,11 +105,15 @@ class EmailClassifier:
         if _contains_price_above_threshold(text):
             return VENDOR_RESPONSE
 
-        # 4. Check for listing service patterns
+        # 4. Check for vendor promotion patterns (offering parts for sale)
+        if any(pattern in text_lower for pattern in VENDOR_PROMOTION_PATTERNS):
+            return VENDOR_PROMOTION
+
+        # 5. Check for listing service patterns
         if any(pattern in text_lower for pattern in LISTING_SERVICE_PATTERNS):
             return LISTING_SERVICE
 
-        # 5. Check for outbound quote patterns (but not if it's a reply)
+        # 6. Check for outbound quote patterns (but not if it's a reply)
         if any(pattern in text_lower for pattern in OUTBOUND_QUOTE_PATTERNS):
             return AUTOMATED
 

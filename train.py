@@ -29,7 +29,7 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-from app.database import get_connection, fetch_inbound_emails, fetch_email_count
+from app.database import get_connection, fetch_inbound_emails, fetch_email_count, fetch_corrected_labels
 from app.storage import get_s3_client, download_emails_batch
 from app.email_parser import parse_email, extract_text_for_classification
 from app.categories import get_category_from_keywords, CATEGORIES, CATEGORY_DESCRIPTIONS
@@ -83,17 +83,33 @@ def load_emails(limit=None):
     return emails
 
 
-def label_emails_heuristically(emails):
+def label_emails_heuristically(emails, corrected_labels=None):
     """
     Apply heuristic labeling based on keyword matching.
 
     This provides initial training labels that can be manually corrected.
+    If corrected_labels dict is provided, those labels take precedence.
     """
     print("Applying heuristic labels...")
 
+    corrected_labels = corrected_labels or {}
+    corrected_count = 0
+
     for email in emails:
-        from_address = email.get('parsed', {}).get('from', '')
-        email['label'] = get_category_from_keywords(email['text'], from_address)
+        email_id = email['id']
+
+        # Use corrected label if available, otherwise fall back to heuristic
+        if email_id in corrected_labels:
+            email['label'] = corrected_labels[email_id]
+            email['label_source'] = 'corrected'
+            corrected_count += 1
+        else:
+            from_address = email.get('parsed', {}).get('from', '')
+            email['label'] = get_category_from_keywords(email['text'], from_address)
+            email['label_source'] = 'heuristic'
+
+    print(f"  Using {corrected_count} corrected labels")
+    print(f"  Using {len(emails) - corrected_count} heuristic labels")
 
     # Print distribution
     from collections import Counter
@@ -226,8 +242,15 @@ def main():
         print("No emails found to process")
         sys.exit(1)
 
-    # Apply heuristic labels
-    emails = label_emails_heuristically(emails)
+    # Fetch corrected labels from database
+    print("\nFetching corrected labels from database...")
+    conn = get_connection()
+    corrected_labels = fetch_corrected_labels(conn)
+    conn.close()
+    print(f"Found {len(corrected_labels)} corrected labels")
+
+    # Apply heuristic labels (with corrected labels taking precedence)
+    emails = label_emails_heuristically(emails, corrected_labels)
 
     # Export for manual labeling if requested
     if args.export_csv:
