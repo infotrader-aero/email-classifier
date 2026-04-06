@@ -136,6 +136,9 @@ CATEGORY_KEYWORDS = {
         'greeting from', 'greetings from',
         'we are specializing', 'we specialize in',
         'odm', 'oem services', 'obm services',
+        # Patterns from post-processing (surplus/sale offers)
+        'surplus for sale', 'parts for sale', 'inventory for sale',
+        'stock for sale', 'we have a list of surplus',
     ],
     ORDER_CONFIRMATION: [
         'order confirmation', 'order received', 'order number',
