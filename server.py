@@ -9,7 +9,7 @@ Usage:
 
 Environment variables:
     API_KEY: Bearer token for authentication (required)
-    MODEL_PATH: Path to pickle file (default: models/email_classifier.pkl)
+    MODEL_PATH: Path to pickle file (default: models/email_classifier_04-14-26.pkl)
 """
 
 import os
@@ -58,7 +58,7 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Security(security))
 @lru_cache()
 def get_classifier():
     """Load classifier once and cache it."""
-    model_path = os.environ.get('MODEL_PATH', 'models/email_classifier.pkl')
+    model_path = os.environ.get('MODEL_PATH', 'models/email_classifier_04-14-26.pkl')
 
     if not Path(model_path).exists():
         raise HTTPException(
@@ -116,7 +116,7 @@ class CategoriesResponse(BaseModel):
 @app.get("/health", response_model=HealthResponse)
 def health_check():
     """Health check endpoint (no auth required)."""
-    model_path = os.environ.get('MODEL_PATH', 'models/email_classifier.pkl')
+    model_path = os.environ.get('MODEL_PATH', 'models/email_classifier_04-14-26.pkl')
     model_loaded = Path(model_path).exists()
 
     return {

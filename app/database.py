@@ -22,9 +22,14 @@ def get_connection():
     )
 
 
-def fetch_inbound_emails(conn, limit=None):
+def fetch_inbound_emails(conn, limit=None, before=None):
     """
     Fetch inbound emails with their ActiveStorage blob information.
+
+    Args:
+        conn: Database connection
+        limit: Optional max number of emails to return
+        before: Optional datetime/date — only fetch emails created before this date
 
     Returns a list of dictionaries with email metadata and blob keys.
     """
@@ -47,14 +52,20 @@ def fetch_inbound_emails(conn, limit=None):
             AND asa.name = 'raw_email'
         JOIN active_storage_blobs asb
             ON asb.id = asa.blob_id
-        ORDER BY amie.created_at DESC
     """
+
+    params = []
+    if before:
+        query += " WHERE amie.created_at < %s"
+        params.append(before)
+
+    query += " ORDER BY amie.created_at DESC"
 
     if limit:
         query += f" LIMIT {limit}"
 
     with conn.cursor() as cursor:
-        cursor.execute(query)
+        cursor.execute(query, params or None)
         return cursor.fetchall()
 
 

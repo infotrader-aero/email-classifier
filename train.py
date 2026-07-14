@@ -23,6 +23,7 @@ Environment variables required:
 import os
 import sys
 import argparse
+from datetime import date
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -36,9 +37,13 @@ from app.categories import get_category_from_keywords, CATEGORIES, CATEGORY_DESC
 from app.classifier import EmailClassifier, train_and_evaluate
 
 
-def load_emails(limit=None):
+def load_emails(limit=None, before=None):
     """
     Load emails from database and S3.
+
+    Args:
+        limit: Optional max number of emails to fetch
+        before: Optional date — only fetch emails created before this date
 
     Returns:
         List of dictionaries with email data and parsed content
@@ -49,8 +54,9 @@ def load_emails(limit=None):
     total_count = fetch_email_count(conn)
     print(f"Total emails in database: {total_count}")
 
-    print(f"Fetching email metadata{f' (limit: {limit})' if limit else ''}...")
-    email_records = fetch_inbound_emails(conn, limit=limit)
+    print(f"Fetching email metadata{f' (limit: {limit})' if limit else ''}"
+          f"{f' (before: {before})' if before else ''}...")
+    email_records = fetch_inbound_emails(conn, limit=limit, before=before)
     print(f"Found {len(email_records)} emails with blob data")
 
     conn.close()
@@ -216,11 +222,15 @@ def export_for_manual_labeling(emails, output_path):
 def main():
     parser = argparse.ArgumentParser(description='Train email classifier')
     parser.add_argument('--limit', type=int, help='Limit number of emails to process')
+    parser.add_argument('--before', type=str, default='2026-04-14',
+                        help='Only fetch emails before this date (YYYY-MM-DD, default: 2026-04-14)')
     parser.add_argument('--output', default='models/email_classifier.pkl',
                         help='Output path for pickle file')
     parser.add_argument('--export-csv', help='Export emails to CSV for manual labeling')
 
     args = parser.parse_args()
+
+    before_date = date.fromisoformat(args.before)
 
     # Validate environment
     required_vars = ['DATABASE_URL', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY']
@@ -236,7 +246,7 @@ def main():
         sys.exit(1)
 
     # Load and process emails
-    emails = load_emails(limit=args.limit)
+    emails = load_emails(limit=args.limit, before=before_date)
 
     if not emails:
         print("No emails found to process")

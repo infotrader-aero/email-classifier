@@ -21,7 +21,7 @@ from app.classifier import EmailClassifier
 
 def load_classifier():
     """Load the trained classifier."""
-    model_path = Path('models/email_classifier.pkl')
+    model_path = Path('models/email_classifier_04-14-26.pkl')
     if not model_path.exists():
         print("Error: No trained model found. Run train.py first.")
         sys.exit(1)

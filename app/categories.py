@@ -10,6 +10,7 @@ LISTING_SERVICE = 'listing_service'
 PERSONAL = 'personal'
 SPAM = 'spam'
 VENDOR_RESPONSE = 'vendor_response'
+VENDOR_QUOTE_RESPONSE = 'vendor_quote_response'
 VENDOR_PROMOTION = 'vendor_promotion'
 ORDER_CONFIRMATION = 'order_confirmation'
 SHIPPING_NOTIFICATION = 'shipping_notification'
@@ -24,6 +25,7 @@ CATEGORIES = [
     PERSONAL,
     SPAM,
     VENDOR_RESPONSE,
+    VENDOR_QUOTE_RESPONSE,
     VENDOR_PROMOTION,
     ORDER_CONFIRMATION,
     SHIPPING_NOTIFICATION,
@@ -55,6 +57,11 @@ CATEGORY_DESCRIPTIONS = {
     VENDOR_RESPONSE: (
         "Responses from vendors about quotes, pricing, or availability. "
         "Not a request, but a reply to a previous inquiry. Usually has RE: in subject."
+    ),
+    VENDOR_QUOTE_RESPONSE: (
+        "Responses from vendors to our request_for_quotes. These are quotes or pricing "
+        "replies we receive back after sending an RFQ to a vendor. The vendor is answering "
+        "our specific inquiry with pricing, availability, lead time, or terms."
     ),
     VENDOR_PROMOTION: (
         "Unsolicited sales emails from aviation vendors offering their inventory. "
@@ -123,7 +130,27 @@ CATEGORY_KEYWORDS = {
         'we can only offer', 'let me know if that works',
         'quote attached', 'pricing attached',
         'we have available', 'unit available',
-        'your rfq', 'quote for rfq',
+    ],
+    VENDOR_QUOTE_RESPONSE: [
+        # Explicit RFQ references
+        'your rfq', 'quote for rfq', 'in response to your rfq',
+        'per your rfq', 'replying to your rfq', 'reference your rfq',
+        'regarding your rfq', 'for rfq #', 'for rfq#',
+        # Formal quote language
+        'in reply to your request for quote', 'as per your request for quote',
+        'we are pleased to quote', 'please find our quote',
+        'we are pleased to offer', 'attached quotation',
+        'our quotation for', 'review our attached quotation',
+        'please see our offer attached', 'attached offer',
+        'please find attached file as our quotation',
+        'kindly review our quote', 'kindly consider our quote',
+        'thank you for your request', 'thank you for contacting us',
+        # Offer/availability language
+        'we have the unit', 'we can offer',
+        'quote attached', 'offer attached',
+        # No-quote / no-bid responses
+        'no quote', 'no bid', 'no stock', 'have to no bid',
+        'nq on all',
     ],
     VENDOR_PROMOTION: [
         'hot parts', 'hot list', 'sale is live', 'parts sale',
@@ -194,11 +221,36 @@ def get_category_from_keywords(text, from_address=''):
     if any(svc in from_lower or svc in text_lower for svc in listing_services):
         return LISTING_SERVICE
 
-    # 2. Reply/Forward detection - check BEFORE outbound quotes (replies often quote original)
+    # 2. Vendor quote response detection (vendor replying to our RFQ)
+    vendor_quote_response_signals = [
+        'your rfq', 'quote for rfq', 'in response to your rfq',
+        'per your rfq', 'regarding your rfq', 'replying to your rfq',
+        'for rfq #', 'for rfq#',
+        'in reply to your request for quote', 'as per your request for quote',
+        'we are pleased to quote', 'please find our quote',
+        'we are pleased to offer', 'attached quotation',
+        'our quotation for', 'review our attached quotation',
+        'please see our offer attached', 'attached offer',
+        'please find attached file as our quotation',
+        'kindly review our quote', 'kindly consider our quote',
+        'thank you for your request', 'thank you for contacting us',
+        'we have the unit', 'we can offer',
+        'quote attached', 'offer attached',
+        'no quote', 'no bid', 'no stock', 'have to no bid',
+        'nq on all',
+    ]
+    if any(signal in text_lower for signal in vendor_quote_response_signals):
+        return VENDOR_QUOTE_RESPONSE
+
+    # 3. Reply/forward to our outbound RFQ (subject: "<Tenant> Request for Quote")
+    if re.match(r'^(re|fw|fwd):\s', text_lower) and 'request for quote' in text_lower:
+        return VENDOR_QUOTE_RESPONSE
+
+    # 4. Reply/Forward detection - check BEFORE outbound quotes (replies often quote original)
     if re.match(r'^(re|fw|fwd):\s', text_lower):
         return VENDOR_RESPONSE
 
-    # 3. Outbound quote confirmations (system-generated quotes we sent)
+    # 5. Outbound quote confirmations (system-generated quotes we sent)
     outbound_quote_signals = [
         'your quote is ready', 'quote confirmation',
         'this is a quotation only', 'this quote is valid for',
@@ -206,19 +258,19 @@ def get_category_from_keywords(text, from_address=''):
     if any(signal in text_lower for signal in outbound_quote_signals):
         return AUTOMATED
 
-    # 4. Recall/system messages (Outlook recall feature)
+    # 6. Recall/system messages (Outlook recall feature)
     if text_lower.startswith('recall:'):
         return AUTOMATED
 
-    # 5. Automated email detection (noreply addresses)
+    # 7. Automated email detection (noreply addresses)
     if ('noreply@' in from_lower or 'no-reply@' in from_lower or 'donotreply@' in from_lower):
         return AUTOMATED
 
-    # 6. Newsletter detection (unsubscribe is a strong signal)
+    # 8. Newsletter detection (unsubscribe is a strong signal)
     if 'unsubscribe' in text_lower or 'opt out' in text_lower or 'optout' in text_lower:
         return NEWSLETTER
 
-    # 7. Personal/greeting emails
+    # 9. Personal/greeting emails
     personal_signals = [
         'happy new year', 'happy holidays', 'merry christmas',
         'season\'s greetings', 'wishing you', 'best wishes for',
@@ -227,7 +279,7 @@ def get_category_from_keywords(text, from_address=''):
     if any(signal in text_lower for signal in personal_signals):
         return PERSONAL
 
-    # 8. Vendor promotion detection (offering products TO recipient)
+    # 10. Vendor promotion detection (offering products TO recipient)
     vendor_promo_signals = [
         'hot parts', 'sale is live', 'exclusive discounts',
         'discover our', 'explore our', 'we are specializing',

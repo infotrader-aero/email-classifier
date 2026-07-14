@@ -87,7 +87,7 @@ def classify_text(classifier, text, parsed=None):
 
 def main():
     parser = argparse.ArgumentParser(description='Classify emails')
-    parser.add_argument('--model', default='models/email_classifier.pkl',
+    parser.add_argument('--model', default='models/email_classifier_04-14-26.pkl',
                         help='Path to trained model pickle file')
     parser.add_argument('--email-id', type=int, help='Database ID of email to classify')
     parser.add_argument('--text', help='Raw text to classify')

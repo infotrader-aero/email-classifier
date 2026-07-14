@@ -7,7 +7,7 @@ services:
       - "8000:8000"
     environment:
       - API_KEY=${API_KEY}
-      - MODEL_PATH=/app/models/email_classifier.pkl
+      - MODEL_PATH=/app/models/email_classifier_04-14-26.pkl
     volumes:
       - ./models:/app/models:ro
     restart: unless-stopped
