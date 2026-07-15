@@ -7,7 +7,7 @@ set -e
 MODEL_FILE="models/email_classifier.pkl"
 REMOTE_DIR="/opt/email-classifier/models"
 
-SSH_USER="ubuntu"
+SSH_USER="${KAMAL_SSH_USER:-ubuntu}"
 
 echo "Syncing model file to servers..."
 

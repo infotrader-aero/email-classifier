@@ -34,7 +34,7 @@ ssh:
 
 env:
   clear:
-    MODEL_PATH: /app/models/email_classifier_04-14-26.pkl
+    MODEL_PATH: /app/models/email_classifier.pkl
   secret:
     - API_KEY
 
