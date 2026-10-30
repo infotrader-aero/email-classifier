@@ -78,7 +78,8 @@ def load_emails(limit=None, before=None):
                     'id': record['id'],
                     'message_id': record['message_id'],
                     'created_at': record['created_at'],
-                    'parsed': parsed,
+                    # Only the fields used below; whole parsed emails don't fit in memory
+                    'parsed': {'subject': parsed.get('subject', ''), 'from': parsed.get('from', '')},
                     'text': text,
                 })
         except Exception as e:

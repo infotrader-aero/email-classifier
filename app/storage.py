@@ -1,4 +1,6 @@
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 import boto3
 from botocore.exceptions import ClientError
 
@@ -42,19 +44,30 @@ def download_email_content(s3_client, blob_key, bucket=None):
         raise
 
 
-def download_emails_batch(s3_client, email_records, bucket=None):
+def download_emails_batch(s3_client, email_records, bucket=None, max_workers=16):
     """
-    Download multiple emails from S3.
+    Download multiple emails from S3 concurrently.
 
     Args:
-        s3_client: boto3 S3 client
+        s3_client: boto3 S3 client (thread-safe)
         email_records: List of email records with blob_key
         bucket: Optional bucket name override
+        max_workers: Number of concurrent downloads
 
     Yields:
-        Tuples of (email_record, raw_content)
+        Tuples of (email_record, raw_content), in completion order
     """
-    for record in email_records:
-        content = download_email_content(s3_client, record['blob_key'], bucket)
-        if content:
-            yield record, content
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(download_email_content, s3_client, record['blob_key'], bucket): record
+            for record in email_records
+        }
+        total = len(futures)
+        for i, future in enumerate(as_completed(futures), 1):
+            # Drop the finished future so its email content can be freed once handled
+            record = futures.pop(future)
+            content = future.result()
+            if content:
+                yield record, content
+            if i % 1000 == 0:
+                print(f"  Downloaded {i}/{total}")

@@ -14,12 +14,14 @@ build/
 
 # Models (large files)
 models/*.pkl
+models/*.bak
 
 # Data
 data/*.csv
 
 # Examples (sensitive email content)
 examples/
+regressions/
 
 # IDE
 .idea/
