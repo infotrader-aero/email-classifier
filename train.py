@@ -30,11 +30,17 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-from app.database import get_connection, fetch_inbound_emails, fetch_email_count, fetch_corrected_labels
+from app.database import (
+    get_connection, fetch_inbound_emails, fetch_email_count, fetch_corrected_labels,
+    fetch_inbound_emails_by_ids, fetch_repair_service_quote_candidate_ids,
+)
 from app.storage import get_s3_client, download_emails_batch
 from app.email_parser import parse_email, extract_text_for_classification
-from app.categories import get_category_from_keywords, CATEGORIES, CATEGORY_DESCRIPTIONS
+from app.categories import (
+    get_category_from_keywords, is_repair_service_quote, CATEGORIES, CATEGORY_DESCRIPTIONS, REPAIR_SERVICE_QUOTE,
+)
 from app.classifier import EmailClassifier, train_and_evaluate
+from app.regressions import is_regression_holdout, regression_ids
 
 
 def load_emails(limit=None, before=None):
@@ -61,6 +67,40 @@ def load_emails(limit=None, before=None):
 
     conn.close()
 
+    return download_and_parse(email_records)
+
+
+def load_repair_service_quotes(since, exclude_ids=()):
+    """
+    Load repair service quotes created on or after a date.
+
+    Repair quotes only started arriving after the base training cutoff, so they
+    are added on top of the base set. Regression holdouts and emails in
+    the regression set are left out.
+
+    Args:
+        since: Date — only fetch emails created on or after this date
+        exclude_ids: Email ids already loaded
+
+    Returns:
+        List of dictionaries with email data and parsed content
+    """
+    print(f"\nFetching repair service quote candidates since {since}...")
+    conn = get_connection()
+    candidate_ids = fetch_repair_service_quote_candidate_ids(conn, since=since)
+    exclude_ids = set(exclude_ids) | regression_ids()
+    ids = [i for i in candidate_ids if i not in exclude_ids and not is_regression_holdout(i)]
+    email_records = fetch_inbound_emails_by_ids(conn, ids)
+    conn.close()
+    print(f"Found {len(candidate_ids)} candidates, {len(email_records)} after excluding regression holdouts")
+
+    emails = [email for email in download_and_parse(email_records) if is_repair_service_quote(email['text'])]
+    print(f"Confirmed {len(emails)} repair service quotes")
+    return emails
+
+
+def download_and_parse(email_records):
+    """Download emails from S3 and parse them for classification."""
     print("Connecting to S3...")
     s3_client = get_s3_client()
 
@@ -95,18 +135,25 @@ def label_emails_heuristically(emails, corrected_labels=None):
     Apply heuristic labeling based on keyword matching.
 
     This provides initial training labels that can be manually corrected.
-    If corrected_labels dict is provided, those labels take precedence.
+    If corrected_labels dict is provided, those labels take precedence,
+    except for repair service quotes: corrected labels predate that category
+    and file them as vendor_response or vendor_quote_response.
     """
     print("Applying heuristic labels...")
 
     corrected_labels = corrected_labels or {}
     corrected_count = 0
+    repair_count = 0
 
     for email in emails:
         email_id = email['id']
 
+        if is_repair_service_quote(email['text']):
+            email['label'] = REPAIR_SERVICE_QUOTE
+            email['label_source'] = 'repair_rule'
+            repair_count += 1
         # Use corrected label if available, otherwise fall back to heuristic
-        if email_id in corrected_labels:
+        elif email_id in corrected_labels:
             email['label'] = corrected_labels[email_id]
             email['label_source'] = 'corrected'
             corrected_count += 1
@@ -115,8 +162,9 @@ def label_emails_heuristically(emails, corrected_labels=None):
             email['label'] = get_category_from_keywords(email['text'], from_address)
             email['label_source'] = 'heuristic'
 
+    print(f"  Using {repair_count} repair service quote labels")
     print(f"  Using {corrected_count} corrected labels")
-    print(f"  Using {len(emails) - corrected_count} heuristic labels")
+    print(f"  Using {len(emails) - corrected_count - repair_count} heuristic labels")
 
     # Print distribution
     from collections import Counter
@@ -228,6 +276,8 @@ def main():
     parser.add_argument('--output', default='models/email_classifier.pkl',
                         help='Output path for pickle file')
     parser.add_argument('--export-csv', help='Export emails to CSV for manual labeling')
+    parser.add_argument('--no-repair-quotes', action='store_true',
+                        help='Skip adding repair service quotes received since --before')
 
     args = parser.parse_args()
 
@@ -252,6 +302,9 @@ def main():
     if not emails:
         print("No emails found to process")
         sys.exit(1)
+
+    if not args.no_repair_quotes:
+        emails += load_repair_service_quotes(before_date, exclude_ids={email['id'] for email in emails})
 
     # Fetch corrected labels from database
     print("\nFetching corrected labels from database...")

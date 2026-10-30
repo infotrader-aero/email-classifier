@@ -8,7 +8,10 @@ from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import classification_report, confusion_matrix
 import numpy as np
 
-from .categories import CATEGORIES, REQUEST_FOR_QUOTE, LISTING_SERVICE, AUTOMATED, VENDOR_RESPONSE, VENDOR_QUOTE_RESPONSE, VENDOR_PROMOTION
+from .categories import (
+    CATEGORIES, REQUEST_FOR_QUOTE, LISTING_SERVICE, AUTOMATED, VENDOR_RESPONSE, VENDOR_QUOTE_RESPONSE,
+    REPAIR_SERVICE_QUOTE, VENDOR_PROMOTION, is_repair_service_quote,
+)
 
 
 # High-confidence patterns that override ML predictions
@@ -109,6 +112,11 @@ class EmailClassifier:
         that we override the ML prediction to ensure accuracy.
         """
         text_lower = text.lower()
+
+        # 0. Check for repair service quotes - BEFORE vendor quote response patterns,
+        #    which would otherwise match these ("quote attached", "no quote")
+        if is_repair_service_quote(text):
+            return REPAIR_SERVICE_QUOTE
 
         # 1. Check for vendor quote response patterns (vendor replying to our RFQ)
         if any(pattern in text_lower for pattern in VENDOR_QUOTE_RESPONSE_PATTERNS):

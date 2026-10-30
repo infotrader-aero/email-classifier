@@ -11,6 +11,7 @@ PERSONAL = 'personal'
 SPAM = 'spam'
 VENDOR_RESPONSE = 'vendor_response'
 VENDOR_QUOTE_RESPONSE = 'vendor_quote_response'
+REPAIR_SERVICE_QUOTE = 'repair_service_quote'
 VENDOR_PROMOTION = 'vendor_promotion'
 ORDER_CONFIRMATION = 'order_confirmation'
 SHIPPING_NOTIFICATION = 'shipping_notification'
@@ -26,6 +27,7 @@ CATEGORIES = [
     SPAM,
     VENDOR_RESPONSE,
     VENDOR_QUOTE_RESPONSE,
+    REPAIR_SERVICE_QUOTE,
     VENDOR_PROMOTION,
     ORDER_CONFIRMATION,
     SHIPPING_NOTIFICATION,
@@ -62,6 +64,12 @@ CATEGORY_DESCRIPTIONS = {
         "Responses from vendors to our request_for_quotes. These are quotes or pricing "
         "replies we receive back after sending an RFQ to a vendor. The vendor is answering "
         "our specific inquiry with pricing, availability, lead time, or terms."
+    ),
+    REPAIR_SERVICE_QUOTE: (
+        "A repair station / MRO / shop quoting repair SERVICES on a part (RP repair, "
+        "OH overhaul, BC bench check, TS test) rather than the sale of a unit. Includes "
+        "ILS 'Quote Received' notices with a Service column and shop replies to our "
+        "repair quote requests, often with TAT, evaluation fee, warranty or BER rate."
     ),
     VENDOR_PROMOTION: (
         "Unsolicited sales emails from aviation vendors offering their inventory. "
@@ -152,6 +160,8 @@ CATEGORY_KEYWORDS = {
         'no quote', 'no bid', 'no stock', 'have to no bid',
         'nq on all',
     ],
+    # REPAIR_SERVICE_QUOTE has no keywords: only is_repair_service_quote assigns it,
+    # since its wording also appears in our outbound repair quote requests
     VENDOR_PROMOTION: [
         'hot parts', 'hot list', 'sale is live', 'parts sale',
         'exclusive discounts', 'special offer', 'special pricing',
@@ -204,6 +214,108 @@ CATEGORY_KEYWORDS = {
 }
 
 
+# Repair service quote detection. Repair quotes look like vendor quotes (IQs),
+# so these only match service-specific structure, never bare condition codes:
+# "OH $5,000" in a vendor quote is an overhauled unit for sale, not a service.
+
+# ILS "Quote Received" notice with one service code per quote ("Service: RP").
+# Our outbound ILS RFQ form lists several ("Service: OH, RP, BC") and is a request.
+ILS_SERVICE_QUOTE_PATTERN = re.compile(
+    r'you have received a quote.*?service:\s*(?:rp|oh|bc|ts)\b(?!\s*,)', re.S
+)
+
+# Reply/forward to our outbound repair RFQs ("<Tenant> - Request for Repair Quote - PN X",
+# "Please provide average Test, Repair and Overhaul pricing for PN X")
+REPAIR_RFQ_REPLY_PATTERN = re.compile(
+    r'^(?:re|fw|fwd):\s.*(?:request for repair quot|provide average test, repair and overhaul pricing)'
+)
+
+# A service label followed by a price ("Bench Test: $400", "Repair Average: $5000",
+# "Test/Inspect: $330", "Overhaul - $9500.00", "BC:$604.00"). BC is the only
+# service code allowed here: OH/RP/SV double as part condition codes.
+SERVICE_PRICE_PATTERN = re.compile(
+    r'\b(bench\s*(?:test|check)|bc|test(?:/(?:inspect\w*|eval\w*))?|repair|overhaul)'
+    r'(?:\s*(?:average|avg\.?))?(?:\s*(?:average\s*)?(?:cost|price))?'
+    r'\s*[:\-–]\s*(?:usd\s*)?\$\s*\d'
+)
+
+# Service price table: two service columns followed by a price
+# ("Average Overhaul Average Repair Bench Test ... $1,075", "BENCH CHECK TAT AVG REP TAT AVG OH TAT ... $550")
+SERVICE_COLUMN = r'(?:bench (?:check|test)|av(?:g\.?|erage) (?:rep\w*|oh|overhaul))'
+SERVICE_PRICE_HEADER_PATTERN = re.compile(rf'{SERVICE_COLUMN}.{{0,40}}{SERVICE_COLUMN}.{{0,200}}\$\s*\d')
+
+# Repair quote terms that confirm a single priced service
+SERVICE_TERMS_PATTERN = re.compile(
+    r'\b(?:eval(?:uation)?\s*(?:/\s*ber\s*)?fee|teardown fee|ber(?:/scrap)?\s*rate|warranty period|tat)\b'
+)
+
+
+REPLY_PREFIX_PATTERN = re.compile(r'^re:\s')
+
+# Start of the quoted history in a reply ("From: X Sent: ...", "On <date> X wrote:")
+QUOTED_HISTORY_PATTERN = re.compile(
+    r'\bfrom:\*?\s.{0,200}?\b(?:sent|date):|\bon\s.{0,150}?\bwrote:|-{2,}\s*original message|\boriginal message:'
+)
+
+# A reply that answers our repair quote request: prices (with or without "$"),
+# pricing in an attachment or table, or a capability decline
+REPAIR_REPLY_ANSWER_PATTERN = re.compile(
+    r'\$\s*\d|\b(?:test|tst|bc|rp|rep|repair|oh|ovh|overhaul)\s*[:\-]?\s*\d{3,}'
+    r'|\b(?:pricing|prices|quote|quotation|rfq)\s+(?:below|attached)|\b(?:see|find) (?:the )?attached'
+    r'|\bhere (?:is|are) (?:the |our )?(?:average )?(?:pricing|prices|quote)'
+    r'|\bno cap(?:e?s|abilit\w*)\b|\b(?:not?|any) (?:have |hold )?(?:the )?(?:repair )?cap(?:e?s|abilit\w*)\b'
+    r'|\bno quote\b|\bunable to\b|\b(?:can ?not|can\'t|cannot|do not|does not) (?:do|repair|overhaul|support|quote)'
+)
+
+
+# An outright sale priced alongside the services ("Outright: ... Price: $11,995")
+OUTRIGHT_SALE_PATTERN = re.compile(r'\boutright\b.{0,400}?\$\s*\d')
+
+
+def _latest_message(text_lower):
+    """Strip the quoted history from a reply, keeping the subject and newest message."""
+    match = QUOTED_HISTORY_PATTERN.search(text_lower)
+    return text_lower[:match.start()] if match else text_lower
+
+
+def is_repair_service_quote(text):
+    """
+    Check whether an email quotes repair services (RP/OH/BC/TS) on a part.
+
+    An email that also quotes the outright sale of a unit is a vendor quote
+    response, which covers both its part and service lines.
+    """
+    text_lower = text.lower()
+
+    # A reply is judged by its newest message: the quoted repair quote below a
+    # "thanks" or a follow-up question doesn't make the reply a quote. Forwards
+    # keep the quoted part, since the forwarded email is the quote.
+    if REPLY_PREFIX_PATTERN.match(text_lower):
+        text_lower = _latest_message(text_lower)
+
+    return _quotes_repair_services(text_lower) and not OUTRIGHT_SALE_PATTERN.search(text_lower)
+
+
+def _quotes_repair_services(text_lower):
+    if REPLY_PREFIX_PATTERN.match(text_lower):
+        if REPAIR_RFQ_REPLY_PATTERN.search(text_lower) and REPAIR_REPLY_ANSWER_PATTERN.search(text_lower):
+            return True
+    elif REPAIR_RFQ_REPLY_PATTERN.search(text_lower):
+        return True
+
+    if ILS_SERVICE_QUOTE_PATTERN.search(text_lower):
+        return True
+    if SERVICE_PRICE_HEADER_PATTERN.search(text_lower):
+        return True
+
+    # Two priced services, or one priced service plus a repair quote term
+    services = {
+        re.sub(r'\s+', ' ', match).replace('check', 'test').replace('bc', 'bench test').split('/')[0]
+        for match in SERVICE_PRICE_PATTERN.findall(text_lower)
+    }
+    return len(services) >= 2 or bool(services and SERVICE_TERMS_PATTERN.search(text_lower))
+
+
 def get_category_from_keywords(text, from_address=''):
     """
     Heuristic classification based on keyword matching.
@@ -215,6 +327,11 @@ def get_category_from_keywords(text, from_address=''):
     from_lower = from_address.lower() if from_address else ''
 
     # Priority rules - these override keyword scoring
+
+    # 0. Repair service quote detection - BEFORE listing service, since ILS
+    #    "Quote Received" repair notices come from ilsmart.com
+    if is_repair_service_quote(text):
+        return REPAIR_SERVICE_QUOTE
 
     # 1. Listing service detection (ILSMart, PartsBase, SkySelect, etc.)
     listing_services = ['ilsmart', 'partsbase', 'skyselect', 'locatory', 'stockmarket.aero']
