@@ -22,6 +22,29 @@ def get_connection():
     )
 
 
+INBOUND_EMAIL_BLOB_QUERY = """
+    SELECT
+        amie.id,
+        amie.status,
+        amie.message_id,
+        amie.message_checksum,
+        amie.created_at,
+        amie.category_label,
+        asb.key as blob_key,
+        asb.filename,
+        asb.content_type,
+        asb.byte_size,
+        asb.service_name
+    FROM action_mailbox_inbound_emails amie
+    JOIN active_storage_attachments asa
+        ON asa.record_type = 'ActionMailbox::InboundEmail'
+        AND asa.record_id = amie.id
+        AND asa.name = 'raw_email'
+    JOIN active_storage_blobs asb
+        ON asb.id = asa.blob_id
+"""
+
+
 def fetch_inbound_emails(conn, limit=None, before=None):
     """
     Fetch inbound emails with their ActiveStorage blob information.
@@ -33,26 +56,7 @@ def fetch_inbound_emails(conn, limit=None, before=None):
 
     Returns a list of dictionaries with email metadata and blob keys.
     """
-    query = """
-        SELECT
-            amie.id,
-            amie.status,
-            amie.message_id,
-            amie.message_checksum,
-            amie.created_at,
-            asb.key as blob_key,
-            asb.filename,
-            asb.content_type,
-            asb.byte_size,
-            asb.service_name
-        FROM action_mailbox_inbound_emails amie
-        JOIN active_storage_attachments asa
-            ON asa.record_type = 'ActionMailbox::InboundEmail'
-            AND asa.record_id = amie.id
-            AND asa.name = 'raw_email'
-        JOIN active_storage_blobs asb
-            ON asb.id = asa.blob_id
-    """
+    query = INBOUND_EMAIL_BLOB_QUERY
 
     params = []
     if before:
@@ -66,6 +70,18 @@ def fetch_inbound_emails(conn, limit=None, before=None):
 
     with conn.cursor() as cursor:
         cursor.execute(query, params or None)
+        return cursor.fetchall()
+
+
+def fetch_inbound_emails_by_ids(conn, ids):
+    """Fetch inbound emails with their ActiveStorage blob information by id."""
+    if not ids:
+        return []
+
+    query = INBOUND_EMAIL_BLOB_QUERY + " WHERE amie.id = ANY(%s) ORDER BY amie.id"
+
+    with conn.cursor() as cursor:
+        cursor.execute(query, (list(ids),))
         return cursor.fetchall()
 
 
